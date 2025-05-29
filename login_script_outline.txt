@@ -1,0 +1,207 @@
+# JavaScript Logic Outline for login.htm
+
+## 1. Event Listeners
+
+Attach event listeners to the relevant elements once the DOM is fully loaded.
+
+- **Email/Password "Log in" Button:**
+  - Selector: `button` with text "Log in" (e.g., `document.querySelector('button.bg-[#b2d1e5]')`)
+  - Event: `click`
+  - Handler: `handleEmailPasswordLogin`
+
+- **"Continue with Google" Button:**
+  - Selector: `button` with text "Continue with Google" (e.g., `document.querySelectorAll('button.bg-[#f1f3f4]')[0]`)
+  - Event: `click`
+  - Handler: `handleGoogleLogin`
+
+- **"Continue with Apple" Button:**
+  - Selector: `button` with text "Continue with Apple" (e.g., `document.querySelectorAll('button.bg-[#f1f3f4]')[1]`)
+  - Event: `click`
+  - Handler: `handleAppleLogin`
+
+- **(Optional) Input field event listeners:**
+  - For email and password fields to clear errors on input.
+  - Event: `input`
+
+## 2. Email/Password Login Function (`handleEmailPasswordLogin`)
+
+```javascript
+async function handleEmailPasswordLogin(event) {
+  event.preventDefault(); // Prevent default form submission if it's part of a <form>
+
+  // 2.1. Get email and password values
+  const emailInput = document.querySelector('input[placeholder="Email"]');
+  const passwordInput = document.querySelector('input[placeholder="Password"]');
+  const email = emailInput.value.trim();
+  const password = passwordInput.value.trim();
+
+  // 2.2. Basic client-side validation
+  clearErrorMessages(); // Clear previous errors
+  if (!email) {
+    displayErrorMessage("Email is required.", emailInput);
+    return;
+  }
+  if (!isValidEmail(email)) {
+    displayErrorMessage("Please enter a valid email address.", emailInput);
+    return;
+  }
+  if (!password) {
+    displayErrorMessage("Password is required.", passwordInput);
+    return;
+  }
+  // Optional: Add password length validation, etc.
+
+  // 2.3. Prepare and make POST request
+  const loginButton = event.target.closest('button');
+  setButtonLoadingState(loginButton, true); // Show loading state
+
+  try {
+    const response = await fetch('/auth/login', { // Placeholder backend endpoint
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await response.json(); // Assuming backend sends JSON response
+
+    // 2.4. Handle response
+    if (response.ok) { // Typically 200-299 status codes
+      // Success
+      if (data.token) {
+        localStorage.setItem('sessionToken', data.token); // Store session token
+      }
+      // Display success message briefly or directly redirect
+      displaySuccessMessage("Login successful! Redirecting...");
+      window.location.href = 'elencocorsi.html'; // Redirect to a protected page
+    } else {
+      // Error (e.g., 401, 400, 403, 500)
+      const errorMessage = data.message || `Login failed with status: ${response.status}. Please try again.`;
+      displayErrorMessage(errorMessage);
+    }
+  } catch (error) {
+    // Network error or other issues
+    console.error('Login request failed:', error);
+    displayErrorMessage('An unexpected error occurred. Please check your connection and try again.');
+  } finally {
+    setButtonLoadingState(loginButton, false); // Hide loading state
+  }
+}
+```
+
+## 3. Google Login Function (`handleGoogleLogin`)
+
+```javascript
+function handleGoogleLogin(event) {
+  event.preventDefault();
+  const googleLoginButton = event.target.closest('button');
+  setButtonLoadingState(googleLoginButton, true); // Show loading state (optional here as redirect is fast)
+
+  // 3.1. Simulate redirecting to Google's OAuth consent screen via our backend
+  // In a real app, the backend provides this URL or handles the initial redirect.
+  const BACKEND_GOOGLE_AUTH_URL = '/auth/google/initiate'; // Placeholder
+
+  // This backend endpoint (/auth/google/initiate) would:
+  // 1. Generate the appropriate Google OAuth URL with client_id, redirect_uri, scope, response_type, state.
+  // 2. Redirect the user's browser to that Google OAuth URL.
+  window.location.href = BACKEND_GOOGLE_AUTH_URL;
+
+  // 3.2. Backend Callback (/auth/google/callback)
+  // - Google redirects the user to this pre-configured callback URL on our backend after authentication.
+  // - The callback URL receives an authorization code (or error) from Google as query parameters.
+  // - Backend `/auth/google/callback` logic:
+  //   1. Verifies the 'state' parameter to prevent CSRF.
+  //   2. Exchanges the authorization code with Google for an ID token and an access token.
+  //   3. Validates the ID token.
+  //   4. Retrieves user information (email, name, etc.) from the ID token or by using the access token with Google's user info endpoint.
+  //   5. Looks up the user in the application's database by email.
+  //      - If user exists, logs them in (creates a session).
+  //      - If user does not exist, creates a new user account and then logs them in.
+  //   6. Generates a session token for the frontend.
+  //   7. Redirects the user's browser to a protected frontend page (e.g., 'elencocorsi.html'), possibly embedding the session token or setting a secure cookie.
+  //      Alternatively, it might return the session token in a JSON response if the callback was initiated via AJAX/fetch from a page that doesn't fully reload.
+}
+```
+
+## 4. Apple Login Function (`handleAppleLogin`)
+
+```javascript
+function handleAppleLogin(event) {
+  event.preventDefault();
+  const appleLoginButton = event.target.closest('button');
+  setButtonLoadingState(appleLoginButton, true); // Show loading state
+
+  // 4.1. Similar to Google, redirect to Apple's OAuth consent screen via our backend.
+  const BACKEND_APPLE_AUTH_URL = '/auth/apple/initiate'; // Placeholder
+
+  // Backend `/auth/apple/initiate` would:
+  // 1. Generate Apple OAuth URL with client_id, redirect_uri, scope, response_type, state, response_mode.
+  // 2. Redirect user to Apple's OAuth URL.
+  window.location.href = BACKEND_APPLE_AUTH_URL;
+
+  // 4.2. Backend Callback (/auth/apple/callback)
+  // - Apple redirects to this backend URL (often via a POST request with form data).
+  // - Backend `/auth/apple/callback` logic:
+  //   1. Verifies the 'state' parameter.
+  //   2. Receives an authorization code and potentially user info (name, email - only on first auth).
+  //   3. Exchanges the authorization code with Apple for an ID token and refresh token.
+  //   4. Validates the ID token.
+  //   5. Retrieves user information.
+  //   6. User lookup/creation in DB.
+  //   7. Session creation and token generation.
+  //   8. Redirects to a protected frontend page (e.g., 'elencocorsi.html').
+}
+```
+
+## 5. Error Handling and User Feedback
+
+- **Displaying Error Messages:**
+  - Create a dedicated `div` (e.g., `<div id="errorMessage" class="text-red-500 text-sm px-4 py-2"></div>`) on `login.htm` to show errors.
+  - `function displayErrorMessage(message, inputElement = null)`:
+    - Sets the text content of the error message div.
+    - Makes the div visible.
+    - Optionally, if `inputElement` is provided, add an error class to it (e.g., border-red-500) and focus it.
+  - `function clearErrorMessages()`:
+    - Clears the text content of the error message div.
+    - Hides the div.
+    - Removes error classes from input fields.
+
+- **Displaying Success Messages (Optional):**
+  - Similar to error messages, a dedicated `div` for success messages (e.g., before redirect).
+  - `function displaySuccessMessage(message)`
+
+- **Loading States for Buttons:**
+  - `function setButtonLoadingState(buttonElement, isLoading)`:
+    - If `isLoading` is true:
+      - Disable the button (`buttonElement.disabled = true;`).
+      - Change button text or add a spinner (e.g., `buttonElement.innerHTML = '<span class="spinner"></span> Logging in...';`).
+      - Add a loading class for styling if needed.
+    - If `isLoading` is false:
+      - Enable the button (`buttonElement.disabled = false;`).
+      - Restore original button text/content.
+      - Remove loading class.
+
+## 6. Utility Functions
+
+```javascript
+function isValidEmail(email) {
+  // Basic email validation regex. For more robust validation, use a library or a more comprehensive regex.
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+```
+
+## Notes for Implementation:
+
+- **DOM Ready:** Ensure all scripts are executed after the DOM is fully loaded, e.g., by placing `<script src="your-script.js" defer></script>` before `</body>` or using `DOMContentLoaded` listener.
+- **Error Message Placement:** The error message `div` should be strategically placed in the HTML, perhaps above the login button or globally for the form.
+- **Security:**
+    - For OAuth flows (Google/Apple), the `state` parameter is crucial for CSRF protection.
+    - Ensure backend endpoints are secured.
+    - Use HTTPS for all communications.
+- **User Experience:**
+    - Provide clear feedback for all actions.
+    - Handle slow network conditions gracefully.
+- **Backend Integration:** This outline assumes a backend is responsible for the heavy lifting of OAuth token exchanges and user management. The frontend primarily initiates these flows and handles the final outcomes (redirects, error messages).
+- **Session Management:** Storing tokens in `localStorage` is common, but consider security implications (XSS). `HttpOnly` cookies set by the backend are generally more secure for session tokens if not using a token-based auth for API calls from JS. However, for SPA-like behavior, tokens in JS are often needed.
