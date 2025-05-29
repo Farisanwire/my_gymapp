@@ -1,0 +1,176 @@
+# JavaScript Logic Outline for register.htm
+
+## 1. Event Listeners
+
+Attach an event listener once the DOM is fully loaded.
+
+- **"Sign up" Button:**
+  - Selector: `button` with text "Sign up" (e.g., `document.querySelector('button.bg-[#b2d1e5]')`)
+  - Event: `click`
+  - Handler: `handleRegistration`
+
+## 2. Registration Function (`handleRegistration`)
+
+```javascript
+async function handleRegistration(event) {
+  event.preventDefault(); // Prevent default form submission if it's part of a <form>
+
+  // 2.1. Get email, password, and confirm password values
+  const emailInput = document.querySelector('input[placeholder="Email"]');
+  const passwordInput = document.querySelector('input[placeholder="Password"]');
+  const confirmPasswordInput = document.querySelector('input[placeholder="Confirm Password"]');
+
+  const email = emailInput.value.trim();
+  const password = passwordInput.value; // No trim for password to allow leading/trailing spaces if desired by user
+  const confirmPassword = confirmPasswordInput.value;
+
+  // 2.2. Basic client-side validation
+  clearErrorMessages(); // Clear previous errors
+
+  if (!email) {
+    displayErrorMessage("Email is required.", emailInput);
+    return;
+  }
+  if (!isValidEmail(email)) {
+    displayErrorMessage("Please enter a valid email address.", emailInput);
+    return;
+  }
+  if (!password) {
+    displayErrorMessage("Password is required.", passwordInput);
+    return;
+  }
+  if (!isValidPassword(password)) {
+    // Error message for password strength will be set by isValidPassword
+    displayErrorMessage("Password does not meet strength requirements (e.g., minimum 8 characters, include numbers, etc.).", passwordInput);
+    return;
+  }
+  if (!confirmPassword) {
+    displayErrorMessage("Confirm Password is required.", confirmPasswordInput);
+    return;
+  }
+  if (password !== confirmPassword) {
+    displayErrorMessage("Passwords do not match.", confirmPasswordInput);
+    passwordInput.classList.add('border-red-500'); // Highlight both fields or just confirm
+    return;
+  }
+
+  // 2.3. Prepare and make POST request
+  const signUpButton = event.target.closest('button');
+  setButtonLoadingState(signUpButton, true); // Show loading state
+
+  try {
+    const response = await fetch('/auth/register', { // Placeholder backend endpoint
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }), // Only send email and password
+    });
+
+    const data = await response.json(); // Assuming backend sends JSON response
+
+    // 2.4. Handle response
+    if (response.status === 201) { // HTTP 201 Created for successful registration
+      // Option 1: Redirect to login with a success message
+      // Store a flag in localStorage/sessionStorage to show message on login page
+      localStorage.setItem('registrationSuccess', 'true');
+      window.location.href = 'login.htm';
+
+      // Option 2: Display success message here and then redirect (less common for register)
+      // displaySuccessMessage("Registration successful! Redirecting to login...");
+      // setTimeout(() => { window.location.href = 'login.htm'; }, 3000);
+
+      // Option 3: (If backend logs user in and returns a session token directly)
+      // if (data.token) {
+      //   localStorage.setItem('sessionToken', data.token);
+      //   window.location.href = 'elencocorsi.html'; // Redirect to a protected page
+      // } else {
+      //    // Fallback to login page if token not provided
+      //    localStorage.setItem('registrationSuccess', 'true');
+      //    window.location.href = 'login.htm';
+      // }
+
+    } else {
+      // Error (e.g., 409 Conflict if email already exists, 400 Bad Request for other validation issues from backend)
+      const errorMessage = data.message || `Registration failed with status: ${response.status}. Please try again.`;
+      displayErrorMessage(errorMessage); // Display general error or specific to emailInput if relevant (e.g. email taken)
+      if (response.status === 409) { // Email already exists
+        emailInput.classList.add('border-red-500');
+        emailInput.focus();
+      }
+    }
+  } catch (error) {
+    // Network error or other issues
+    console.error('Registration request failed:', error);
+    displayErrorMessage('An unexpected error occurred. Please check your connection and try again.');
+  } finally {
+    setButtonLoadingState(signUpButton, false); // Hide loading state
+  }
+}
+```
+
+## 3. Error Handling and User Feedback
+
+- **Displaying Error Messages:**
+  - Use a dedicated `div` (e.g., `<div id="errorMessageArea" class="text-red-500 text-sm px-4 py-2 text-center"></div>`) on `register.htm`, perhaps above the "Sign up" button.
+  - `function displayErrorMessage(message, inputElement = null)`:
+    - Sets the text content of the error message div.
+    - Makes the div visible.
+    - If `inputElement` is provided, add an error class (e.g., `border-red-500`) and focus it.
+  - `function clearErrorMessages()`:
+    - Clears the text content of the error message div.
+    - Hides the div.
+    - Removes error classes from input fields.
+
+- **Loading States for "Sign up" Button:**
+  - `function setButtonLoadingState(buttonElement, isLoading)`:
+    - If `isLoading` is true:
+      - Disable the button (`buttonElement.disabled = true;`).
+      - Change button text or add a spinner (e.g., `buttonElement.innerHTML = '<span class="spinner"></span> Signing up...';`).
+    - If `isLoading` is false:
+      - Enable the button (`buttonElement.disabled = false;`).
+      - Restore original button text/content.
+
+## 4. Utility Functions
+
+```javascript
+function isValidEmail(email) {
+  // Basic email validation regex.
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+function isValidPassword(password) {
+  // Example password strength check: minimum 8 characters.
+  // More complex rules can be added (e.g., uppercase, lowercase, numbers, symbols).
+  if (password.length < 8) {
+    // Specific error messages can be set here if the displayErrorMessage function is adapted,
+    // or this function can return an object { valid: false, message: "..." }
+    return false;
+  }
+  // Example: Check for at least one number
+  // if (!/\d/.test(password)) {
+  //   return false;
+  // }
+  // Example: Check for at least one uppercase letter
+  // if (!/[A-Z]/.test(password)) {
+  //   return false;
+  // }
+  return true;
+}
+```
+
+## Notes for Implementation:
+
+- **DOM Ready:** Ensure scripts run after the DOM is loaded (e.g., `<script src="register-script.js" defer></script>` before `</body>` or use `DOMContentLoaded`).
+- **Error Message Placement:** The error message `div` should be clearly visible.
+- **Security:**
+    - Passwords should always be sent over HTTPS.
+    - Backend should hash passwords securely.
+- **User Experience:**
+    - Provide clear feedback (success/error messages, loading states).
+    - Consider showing password strength requirements as the user types.
+    - After successful registration, clearly indicate the next step (e.g., "Please check your email to verify" or "Redirecting to login..."). The current outline redirects to login.
+- **Backend Endpoint:** `/auth/register` is a placeholder. The actual endpoint will be defined by the backend team.
+- **Success Message on Login Page:** If redirecting to `login.htm` and wanting to show a message like "Registration successful! Please log in.", the `login.htm` JavaScript would need to check for the `localStorage.getItem('registrationSuccess')` on load, display the message, and then clear the item.
+```

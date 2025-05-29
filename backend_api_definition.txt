@@ -1,0 +1,218 @@
+# Backend API Definition
+
+## 1. User Model
+
+A user record in the database would typically include the following fields:
+
+- `id`: (Primary Key) Unique identifier for the user (e.g., UUID, auto-incrementing integer).
+- `email`: (String, Unique, Indexed) User's email address. Required.
+- `password_hash`: (String) Hashed password for users who register with email/password. Nullable if social logins don't require a local password.
+- `google_id`: (String, Unique, Nullable, Indexed) User's unique ID from Google, if they signed up using Google.
+- `apple_id`: (String, Unique, Nullable, Indexed) User's unique ID from Apple, if they signed up using Apple.
+- `name` or `displayName`: (String, Nullable) User's display name, potentially fetched from social providers.
+- `profile_picture_url`: (String, Nullable) URL for user's profile picture.
+- `created_at`: (Timestamp) Timestamp of when the user record was created.
+- `updated_at`: (Timestamp) Timestamp of when the user record was last updated.
+- `is_verified`: (Boolean) Flag to indicate if the user's email has been verified (especially for email/password registration).
+- `last_login_at`: (Timestamp, Nullable) Timestamp of the user's last login.
+
+## 2. Endpoint: `POST /auth/register`
+
+- **Purpose:** User registration with email and password.
+- **Request Body (JSON):**
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "strongpassword123"
+  }
+  ```
+- **Backend Logic:**
+    1.  Validate `email`:
+        *   Required, non-empty.
+        *   Must be a valid email format.
+        *   Check for reasonable length.
+    2.  Validate `password`:
+        *   Required, non-empty.
+        *   Check for minimum length (e.g., 8 characters).
+        *   Enforce complexity (e.g., mix of uppercase, lowercase, numbers, symbols as per application policy).
+    3.  Check if a user with the provided `email` already exists in the database. If so, return a `409 Conflict`.
+    4.  Securely hash the `password` using a strong algorithm (e.g., bcrypt with a sufficient cost factor, or Argon2).
+    5.  Create a new user record in the database with the provided `email` and the generated `password_hash`. Other fields like `created_at`, `updated_at` are set accordingly. `is_verified` might be set to `false` pending an email verification step (optional).
+- **Success Response (201 Created):**
+  ```json
+  {
+    "message": "User registered successfully. Please check your email to verify your account.",
+    // Optionally, could return partial user info (excluding password_hash)
+    "user": {
+      "id": "user_uuid_here",
+      "email": "user@example.com"
+    }
+  }
+  ```
+  *(Note: The message about email verification is conditional on implementing that feature.)*
+- **Error Responses:**
+    - `400 Bad Request`: Invalid input.
+      ```json
+      {
+        "error": "Invalid input",
+        "details": "Password is too weak. It must be at least 8 characters long and include a number."
+        // "details" could also be an array of validation errors:
+        // "details": [
+        //   { "field": "password", "message": "Password is too weak." },
+        //   { "field": "email", "message": "Email format is invalid." }
+        // ]
+      }
+      ```
+    - `409 Conflict`: Email already exists.
+      ```json
+      {
+        "error": "Email already registered."
+      }
+      ```
+    - `500 Internal Server Error`: Unexpected server-side error.
+      ```json
+      {
+        "error": "An unexpected error occurred during registration."
+      }
+      ```
+
+## 3. Endpoint: `POST /auth/login`
+
+- **Purpose:** User login using email and password.
+- **Request Body (JSON):**
+  ```json
+  {
+    "email": "user@example.com",
+    "password": "userpassword"
+  }
+  ```
+- **Backend Logic:**
+    1.  Validate `email` and `password` for presence and basic format.
+    2.  Retrieve the user record from the database based on the `email`.
+    3.  If no user is found with that email, return a `401 Unauthorized`.
+    4.  If user is found, compare the provided `password` with the stored `password_hash` using the same hashing algorithm (e.g., `bcrypt.compare()`).
+    5.  If the password does not match, return a `401 Unauthorized`.
+    6.  (Optional) If user exists but `is_verified` is `false`, return a specific error indicating email verification is needed.
+    7.  If credentials are correct and user is active/verified, generate a session token (e.g., JWT) containing user `id` and other relevant claims (e.g., roles). The token should have an expiration time.
+    8.  Update `last_login_at` for the user.
+- **Success Response (200 OK):**
+  ```json
+  {
+    "message": "Login successful.",
+    "token": "your_session_jwt_token_here_generated_by_backend",
+    "user": {
+      "id": "user_uuid_here",
+      "email": "user@example.com",
+      "name": "User Display Name" // or other relevant non-sensitive user fields
+    }
+  }
+  ```
+- **Error Responses:**
+    - `401 Unauthorized`: Invalid credentials or user not found.
+      ```json
+      { "error": "Invalid email or password." }
+      ```
+    - `400 Bad Request`: Missing email or password.
+      ```json
+      { "error": "Email and password are required." }
+      ```
+    - `403 Forbidden`: (Example) User account is locked or not verified.
+      ```json
+      { "error": "Account not verified. Please check your email." }
+      ```
+    - `500 Internal Server Error`: Unexpected server-side error.
+      ```json
+      { "error": "An unexpected error occurred during login." }
+      ```
+
+## 4. Endpoint: `GET /auth/google/initiate` (Example for Google Social Login)
+
+- **Purpose:** Initiates the Google OAuth 2.0 authentication flow.
+- **Request Parameters:** None directly from the client for this endpoint itself. May include `redirect_path` if the frontend wants to control the final post-login redirect.
+- **Backend Logic:**
+    1.  Construct the Google OAuth 2.0 authorization URL. This URL will include:
+        *   `client_id`: Your application's Google Client ID.
+        *   `redirect_uri`: The URI in your application where Google will redirect the user back after authentication (e.g., `https://yourdomain.com/auth/google/callback`).
+        *   `response_type`: Typically `code`.
+        *   `scope`: Defines what access your application is requesting (e.g., `openid email profile`).
+        *   `state`: A random, unguessable string to protect against CSRF attacks. This state should be temporarily stored (e.g., in session or a short-lived cookie) to be verified in the callback.
+        *   (Optional) `prompt`: e.g., `consent` to force account chooser.
+    2.  Redirect the user's browser to this constructed Google URL.
+- **Response:**
+    - HTTP `302 Found` (Redirect)
+    - `Location` header: The constructed Google OAuth URL.
+
+## 5. Endpoint: `GET /auth/google/callback` (Example for Google Social Login)
+
+- **Purpose:** Handles the callback from Google after the user has authenticated (or denied) with Google.
+- **Query Parameters (from Google):**
+    - `code`: The authorization code (if successful).
+    - `state`: The state parameter you sent in the initiation request.
+    - `error`: (If an error occurred) e.g., `access_denied`.
+- **Backend Logic:**
+    1.  Verify the `state` parameter received from Google against the one stored during the initiation step. If they don't match, abort the process (CSRF attempt).
+    2.  If an `error` parameter is present, handle it appropriately (e.g., redirect to login page with an error message).
+    3.  Exchange the `code` with Google's token endpoint for an `access_token`, `id_token`, and `refresh_token` (if applicable). This is a server-to-server request.
+    4.  Validate the `id_token`:
+        *   Check the signature using Google's public keys.
+        *   Verify the `iss` (issuer) and `aud` (audience - your client ID).
+        *   Check token expiration (`exp`).
+    5.  Extract user information from the `id_token` payload (e.g., `sub` (Google User ID), `email`, `name`, `picture`).
+    6.  Check if a user with this `google_id` (the `sub` from token) already exists in your database.
+        *   If yes: Log them in. Update user details like name/picture if they've changed.
+        *   If no: Check if a user with this `email` already exists.
+            *   If yes, and the account is not linked to any social provider or specifically this Google ID, you might link this Google ID to the existing email account (after potential verification steps).
+            *   If no user with this email exists, create a new user record with the Google ID, email, name, etc. `password_hash` might be null.
+    7.  Generate a session token (e.g., JWT) for your application, similar to the email/password login.
+    8.  Redirect the user's browser to a designated frontend page (e.g., `elencocorsi.html` or a specific post-social-login handler page). The session token can be passed via:
+        *   A secure, HttpOnly cookie (recommended for web).
+        *   A query parameter in the redirect URL (less secure, but common for SPAs that will immediately store it in localStorage and remove from URL).
+        *   Fragment identifier (`#token=...`) for SPAs.
+- **Response:**
+    - HTTP `302 Found` (Redirect)
+    - `Location` header: Your frontend URL (e.g., `https://yourdomain.com/elencocorsi.html?token=...` or a URL that sets a cookie).
+    - If an error occurs during token exchange or validation: Redirect to a frontend error page or login page with an error message.
+
+## 6. Endpoints for Apple Login (`Sign in with Apple`)
+
+The flow for Apple Login is conceptually similar to Google's OAuth 2.0 flow but with Apple-specific details.
+
+-   **`GET /auth/apple/initiate`**
+    *   **Purpose:** Initiates the "Sign in with Apple" flow.
+    *   **Backend Logic:** Constructs the Apple authorization URL (including `client_id`, `redirect_URI`, `response_type=code id_token`, `scope=name email`, `state`, `response_mode=form_post`) and redirects the user.
+    *   **Response:** HTTP 302 Redirect to Apple's authentication page.
+
+-   **`POST /auth/apple/callback`** (Note: Apple typically uses a POST request with form data for the callback)
+    *   **Purpose:** Handles the callback from Apple.
+    *   **Request Body (form-urlencoded):** Contains `code`, `id_token`, `state`, and potentially `user` (a JSON string with name/email, usually only on the first authorization).
+    *   **Backend Logic:**
+        1.  Verify `state`.
+        2.  Exchange `code` with Apple for tokens (access token, refresh token, validated ID token). This involves generating a client secret JWT signed with your Apple private key.
+        3.  Validate the `id_token` received from Apple.
+        4.  Extract user information (Apple User ID from `sub` claim in `id_token`, email, name). Email and name might only be provided the first time the user authorizes the app; subsequent logins might only give the Apple User ID. Store this information carefully.
+        5.  Find or create a user in your database linked to this `apple_id`.
+        6.  Generate your application's session token (JWT).
+        7.  Redirect to a frontend page.
+    *   **Response:** HTTP 302 Redirect.
+
+## 7. Session Management
+
+-   **Tokens:** JSON Web Tokens (JWTs) are commonly used for managing sessions in a stateless manner.
+    *   **Generation:** Generated by the backend upon successful login or registration (if auto-login).
+    *   **Content:** Typically includes user ID (`sub`), expiration time (`exp`), issuance time (`iat`), and potentially other claims like roles.
+    *   **Signing:** Signed with a secret key (for HS256/HS512) or a private key (for RS256/ES256) known only to the backend to prevent tampering.
+-   **Transport:**
+    *   Tokens are sent from the server to the client in the response body (e.g., of the login request).
+    *   The client then stores the token (e.g., in `localStorage`, `sessionStorage`, or a secure cookie).
+    *   For subsequent requests to protected API routes, the client sends the token in the `Authorization` header using the `Bearer` scheme:
+        `Authorization: Bearer <your_jwt_token>`
+-   **Server-Side Sessions (Alternative):**
+    *   A session ID is created and stored in a cookie. The server maintains session data in a database or cache (e.g., Redis). This is more stateful.
+    *   For this project, JWTs are generally preferred for potentially simpler client-side handling and scalability, especially if the frontend and backend are decoupled.
+-   **Protected Routes:**
+    *   Backend API endpoints that require authentication (e.g., fetching user-specific data, performing actions) will check for a valid JWT in the `Authorization` header.
+    *   If the token is missing, invalid, or expired, the server returns a `401 Unauthorized` or `403 Forbidden` response.
+-   **Logout:**
+    *   **Client-side:** The client discards the token (e.g., removes it from `localStorage`).
+    *   **Server-side (for JWTs):** True stateless JWTs don't require server-side invalidation for logout. However, for enhanced security (e.g., to immediately invalidate a compromised token), a token blocklist can be implemented (e.g., storing revoked token IDs in a database/cache until they expire). Refresh tokens add another layer to this.
+```
